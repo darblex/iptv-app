@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import Hls from "hls.js";
-import mpegts from "mpegts.js";
 import {
   Maximize,
   Minimize,
@@ -25,15 +24,19 @@ interface Props {
 export default function VideoPlayer({ src, type, title, poster }: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
-  const tsRef = useRef<ReturnType<typeof mpegts.createPlayer> | null>(null);
+  const tsRef = useRef<{ destroy: () => void } | null>(null);
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
   const [time, setTime] = useState({ current: 0, duration: 0 });
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !src) return;
+    let cancelled = false;
+    setErrorMessage(null);
+    setPlaying(false);
 
     if (hlsRef.current) {
       hlsRef.current.destroy();
@@ -44,23 +47,45 @@ export default function VideoPlayer({ src, type, title, poster }: Props) {
       tsRef.current = null;
     }
 
-    const attach = () => {
-      if (src.includes(".m3u8") && Hls.isSupported()) {
-        const hls = new Hls({ enableWorker: true, lowLatencyMode: type === "live" });
+    const attach = async () => {
+      // Removed HEAD probe due to IPTV provider connection limits
+
+      if (cancelled) return;
+
+      if (type === "live") {
+        // Live streams are MPEG-TS; dynamically import mpegts.js to avoid SSR window errors
+        const mpegts = (await import("mpegts.js")).default;
+        if (mpegts.isSupported()) {
+          const player = mpegts.createPlayer({ type: "mpegts", url: src, isLive: true });
+          player.attachMediaElement(video);
+          player.load();
+          tsRef.current = player;
+        } else if (Hls.isSupported()) {
+          const hls = new Hls({ enableWorker: true, lowLatencyMode: true });
+          hls.loadSource(src);
+          hls.attachMedia(video);
+          hlsRef.current = hls;
+        } else {
+          video.src = src;
+        }
+      } else if (src.includes(".m3u8") && Hls.isSupported()) {
+        // VOD/Series served as HLS
+        const hls = new Hls({ enableWorker: true, lowLatencyMode: false });
         hls.loadSource(src);
         hls.attachMedia(video);
         hlsRef.current = hls;
-      } else if (src.includes(".ts") && mpegts.isSupported()) {
-        const player = mpegts.createPlayer({ type: "mpegts", url: src, isLive: type === "live" });
-        player.attachMediaElement(video);
-        player.load();
-        tsRef.current = player;
       } else {
+        // VOD/Series served as mp4 — native playback
         video.src = src;
       }
     };
 
-    attach();
+    attach().catch((error) => {
+      if (!cancelled) {
+        console.error("Video attach error", error);
+        setErrorMessage("שגיאה בטעינת הזרם");
+      }
+    });
 
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
@@ -71,6 +96,7 @@ export default function VideoPlayer({ src, type, title, poster }: Props) {
     video.addEventListener("timeupdate", onTimeUpdate);
 
     return () => {
+      cancelled = true;
       video.removeEventListener("play", onPlay);
       video.removeEventListener("pause", onPause);
       video.removeEventListener("timeupdate", onTimeUpdate);
@@ -83,7 +109,10 @@ export default function VideoPlayer({ src, type, title, poster }: Props) {
     const video = videoRef.current;
     if (!video) return;
     if (video.paused) {
-      video.play();
+      video.play().catch((error) => {
+        console.error("Play error", error);
+        setErrorMessage("לא ניתן להפעיל את הזרם");
+      });
     } else {
       video.pause();
     }
@@ -148,6 +177,7 @@ export default function VideoPlayer({ src, type, title, poster }: Props) {
         poster={poster}
         controls={false}
         playsInline
+        onError={() => setErrorMessage("פורמט הווידאו לא נתמך בדפדפן")}
         className="h-full w-full bg-black"
       />
 
@@ -201,6 +231,12 @@ export default function VideoPlayer({ src, type, title, poster }: Props) {
               className="pointer-events-auto h-1 w-full cursor-pointer appearance-none rounded-full bg-white/20 accent-primary"
             />
             <span className="text-xs text-slate-300">{format(time.duration)}</span>
+          </div>
+        )}
+
+        {errorMessage && (
+          <div className="rounded-xl border border-rose-400/30 bg-rose-500/20 px-3 py-2 text-sm text-rose-100">
+            {errorMessage}
           </div>
         )}
       </div>

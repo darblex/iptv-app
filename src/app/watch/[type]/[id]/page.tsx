@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { notFound, useRouter, useSearchParams } from "next/navigation";
 import VideoPlayer from "@/components/video-player";
 import { getEpg, getLive, getSeries, getVod } from "@/lib/api";
@@ -12,9 +12,7 @@ interface Props {
   params: Promise<{ type: string; id: string }>;
 }
 
-export const dynamic = "force-dynamic";
-
-export default function WatchPage({ params: paramsPromise }: Props) {
+function WatchContent({ params: paramsPromise }: Props) {
   const params = use(paramsPromise);
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -28,6 +26,7 @@ export default function WatchPage({ params: paramsPromise }: Props) {
   const [now, setNow] = useState<EpgEntry | null>(null);
   const [next, setNext] = useState<EpgEntry | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [ext, setExt] = useState<string | null>(null);
 
   useEffect(() => {
     const loadMeta = async () => {
@@ -50,6 +49,7 @@ export default function WatchPage({ params: paramsPromise }: Props) {
           setTitle(movie?.name || "סרט");
           setDescription(movie?.plot || "");
           setPoster(movie?.stream_icon || movie?.cover || undefined);
+          if (movie?.container_extension) setExt(movie.container_extension);
         } else if (type === "series") {
           const data = await getSeries();
           const seriesList = (data.series || (data.streams as SeriesItem[] | undefined) || []) as SeriesItem[];
@@ -76,9 +76,9 @@ export default function WatchPage({ params: paramsPromise }: Props) {
 
   if (!streamId || Number.isNaN(streamId) || !isValidType) return notFound();
 
-  const src = `/api/stream/${type}/${streamId}`;
   const season = searchParams.get("season");
   const episode = searchParams.get("episode");
+  const src = `/api/stream/${type}/${streamId}${type === 'vod' && ext ? `?ext=${ext}` : type === 'series' && (season || episode) ? `?season=${season || 1}&episode=${episode || 1}` : ''}`;
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 lg:px-6 lg:py-10">
@@ -118,5 +118,13 @@ export default function WatchPage({ params: paramsPromise }: Props) {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function WatchPage({ params: paramsPromise }: Props) {
+  return (
+    <Suspense fallback={null}>
+      <WatchContent params={paramsPromise} />
+    </Suspense>
   );
 }

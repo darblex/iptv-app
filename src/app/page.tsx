@@ -12,8 +12,6 @@ import { getLive, getVod } from "@/lib/api";
 import { useFavorites } from "@/lib/hooks/use-favorites";
 import type { FeaturedItem, LiveResponse, VodResponse } from "@/types/content";
 
-export const dynamic = "force-dynamic";
-
 export default function HomePage() {
   const router = useRouter();
   const { favorites, toggleFavorite, isFavorite } = useFavorites();

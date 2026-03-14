@@ -82,6 +82,58 @@ export interface EpgResponse {
   nowPlaying?: XtreamEpgEntry | null;
 }
 
+export interface VodInfo {
+  name?: string;
+  plot?: string;
+  description?: string;
+  cover_big?: string;
+  movie_image?: string;
+  backdrop_path?: string[];
+  year?: string | number;
+  genre?: string;
+  rating?: string | number;
+  duration?: string;
+  cast?: string;
+  director?: string;
+}
+
+export interface VodInfoResponse {
+  info: VodInfo;
+  movie_data: {
+    stream_id: number;
+    name: string;
+    container_extension?: string;
+  };
+}
+
+export interface SeriesEpisode {
+  id: string;
+  episode_num: number | string;
+  title: string;
+  container_extension: string;
+  info?: {
+    episode: string | number;
+    season: string | number;
+  };
+}
+
+export interface SeriesInfo {
+  name?: string;
+  plot?: string;
+  cover?: string;
+  backdrop_path?: string[];
+  year?: string | number;
+  genre?: string;
+  rating?: string | number;
+  cast?: string;
+  director?: string;
+}
+
+export interface SeriesInfoResponse {
+  info: SeriesInfo;
+  episodes: Record<string, SeriesEpisode[]>;
+}
+
 const HEALTH_CACHE_TTL_MS = 5 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 8000;
 const accounts: AccountState[] = loadAccounts();
@@ -153,6 +205,9 @@ function getProtocol(account: XtreamAccount): "http" | "https" {
 
 function buildBaseUrl(account: XtreamAccount): string {
   const protocol = getProtocol(account);
+  if ((protocol === "http" && account.port === 80) || (protocol === "https" && account.port === 443)) {
+    return `${protocol}://${account.host}`;
+  }
   return `${protocol}://${account.host}:${account.port}`;
 }
 
@@ -282,9 +337,24 @@ class XtreamClient {
     });
   }
 
-  buildStreamUrl(type: StreamType, id: number | string): string {
-    const extension = type === "live" ? "ts" : "mp4";
-    return `${buildBaseUrl(this.account)}/${this.account.username}/${this.account.password}/${id}.${extension}`;
+  async getVodInfo(vodId: number): Promise<VodInfoResponse> {
+    return this.fetchApi<VodInfoResponse>({
+      action: "get_vod_info",
+      vod_id: vodId,
+    });
+  }
+
+  async getSeriesInfo(seriesId: number): Promise<SeriesInfoResponse> {
+    return this.fetchApi<SeriesInfoResponse>({
+      action: "get_series_info",
+      series_id: seriesId,
+    });
+  }
+
+  buildStreamUrl(type: StreamType, id: number | string, ext?: string): string {
+    const extension = ext ? ext : (type === "live" ? "ts" : "mp4");
+    const prefix = type === "vod" ? "movie/" : type === "series" ? "series/" : "";
+    return `${buildBaseUrl(this.account)}/${prefix}${this.account.username}/${this.account.password}/${id}.${extension}`;
   }
 }
 
@@ -346,7 +416,23 @@ export async function getEpg(streamId: number): Promise<EpgResponse> {
   };
 }
 
-export async function resolveStreamUrl(type: StreamType, id: number | string): Promise<string> {
+export async function resolveStreamUrl(type: StreamType, id: number | string, ext?: string): Promise<string> {
   const client = await getClient();
-  return client.buildStreamUrl(type, id);
+  return client.buildStreamUrl(type, id, ext);
+}
+
+export async function getVodInfo(vodId: number): Promise<VodInfoResponse> {
+  const client = await getClient();
+  return client.getVodInfo(vodId);
+}
+
+export async function getSeriesInfo(seriesId: number): Promise<SeriesInfoResponse> {
+  const client = await getClient();
+  return client.getSeriesInfo(seriesId);
+}
+
+/** Return the primary IPTV hostname used for redirect rewriting. */
+export function getPrimaryHost(): string {
+  assertAccounts();
+  return accounts[0].host;
 }

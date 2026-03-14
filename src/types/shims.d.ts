@@ -1,1 +1,1 @@
-declare module "mpegts.js";
+// mpegts.js ships its own TypeScript declarations — no shim needed

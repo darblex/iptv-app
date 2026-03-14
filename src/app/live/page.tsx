@@ -10,8 +10,6 @@ import { getEpg, getLive } from "@/lib/api";
 import { useFavorites } from "@/lib/hooks/use-favorites";
 import type { EpgEntry, LiveResponse } from "@/types/content";
 
-export const dynamic = "force-dynamic";
-
 export default function LivePage() {
   const router = useRouter();
   const { toggleFavorite, isFavorite } = useFavorites();
@@ -53,6 +51,8 @@ export default function LivePage() {
   }, [data, category, query]);
 
   useEffect(() => {
+    let stale = false;
+
     const loadEpg = async () => {
       const subset = filtered.slice(0, 15); // limit to reduce load
       const promises = subset.map(async (channel) => {
@@ -70,18 +70,22 @@ export default function LivePage() {
       });
 
       const results = await Promise.all(promises);
-      setEpgMap((prev) => {
-        const updated = { ...prev };
-        results.forEach((item) => {
-          updated[item.id] = { now: item.now, next: item.next };
+      if (!stale) {
+        setEpgMap((prev) => {
+          const updated = { ...prev };
+          results.forEach((item) => {
+            updated[item.id] = { now: item.now, next: item.next };
+          });
+          return updated;
         });
-        return updated;
-      });
+      }
     };
 
     if (filtered.length) {
       loadEpg();
     }
+
+    return () => { stale = true; };
   }, [filtered, isNow]);
 
   return (

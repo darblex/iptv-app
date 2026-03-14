@@ -10,8 +10,6 @@ import { getSeries } from "@/lib/api";
 import type { SeriesItem, SeriesResponse } from "@/types/content";
 import { X } from "lucide-react";
 
-export const dynamic = "force-dynamic";
-
 export default function SeriesPage() {
   const router = useRouter();
   const [data, setData] = useState<SeriesResponse | null>(null);
@@ -21,6 +19,10 @@ export default function SeriesPage() {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<SeriesItem | null>(null);
   const [season, setSeason] = useState(1);
+
+  useEffect(() => {
+    if (selected) setSeason(1);
+  }, [selected]);
 
   useEffect(() => {
     const load = async () => {

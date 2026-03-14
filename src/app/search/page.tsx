@@ -7,8 +7,6 @@ import { CardSkeleton, PosterSkeleton } from "@/components/skeletons";
 import { getLive, getSeries, getVod } from "@/lib/api";
 import type { LiveResponse, SeriesItem, SeriesResponse, VodResponse } from "@/types/content";
 
-export const dynamic = "force-dynamic";
-
 export default function SearchPage() {
   const router = useRouter();
   const [live, setLive] = useState<LiveResponse | null>(null);

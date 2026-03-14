@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Heebo } from "next/font/google";
 import "./globals.css";
 import Navbar from "@/components/navbar";
@@ -15,6 +15,9 @@ const heebo = Heebo({
 export const metadata: Metadata = {
   title: "IL IPTV",
   description: "חוויית הסטרימינג הקולנועית של ישראל",
+};
+
+export const viewport: Viewport = {
   themeColor: "#0A0A0F",
 };
 

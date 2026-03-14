@@ -71,6 +71,7 @@ export default function SearchBar({ placeholder = "חפשו ערוץ, סרט א�
               <button
                 key={`${s.type}-${s.id}`}
                 onClick={() => {
+                  onChange?.(s.title);
                   onSelect?.(s);
                   setOpen(false);
                 }}
