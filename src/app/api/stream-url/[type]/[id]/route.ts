@@ -48,7 +48,9 @@ export async function GET(request: Request, context: { params: Promise<Params> }
     if (leased) account = leased.account;
   }
 
-  const proto = account.https ? "https" : "http";
+  // Client-side playback is loaded from an HTTPS site. Always prefer HTTPS
+  // for direct URLs, otherwise mobile browsers block the stream as mixed content.
+  const proto = "https";
 
   try {
     let streamUrl = "";
@@ -72,7 +74,18 @@ export async function GET(request: Request, context: { params: Promise<Params> }
         streamUrl = buildDirectUrl(account.host, account.port, proto, "series", account.username, account.password, numericId, "mp4");
       }
     } else {
-      streamUrl = buildDirectUrl(account.host, account.port, proto, "live", account.username, account.password, numericId, "ts");
+      const ua = request.headers.get("user-agent") ?? "";
+      const isAppleMobile = /iPhone|iPad|iPod/i.test(ua);
+      const relayBase = process.env.STREAM_RELAY_BASE;
+
+      // iOS Safari cannot play raw MPEG-TS via MSE/mpegts.js. For iOS only,
+      // return an HLS wrapper via the working relay. Android/desktop still get
+      // a direct HTTPS TS URL and use their own IP.
+      if (isAppleMobile && relayBase) {
+        streamUrl = `${relayBase}/hls-live/${account.username}/${account.password}/${numericId}.m3u8?_host=${encodeURIComponent(account.host)}&_port=${account.port}&_proto=${account.https ? "https" : "http"}`;
+      } else {
+        streamUrl = buildDirectUrl(account.host, 443, proto, "live", account.username, account.password, numericId, "ts");
+      }
     }
 
     return NextResponse.json({ url: streamUrl }, {
