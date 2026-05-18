@@ -78,6 +78,14 @@ function proxyUrl(absoluteUrl: string, origin: string) {
   return `${origin}/api/hls-proxy?url=${encodeURIComponent(absoluteUrl)}`;
 }
 
+function publicOrigin(request: Request) {
+  const headers = request.headers;
+  const host = headers.get("x-forwarded-host") || headers.get("host");
+  const proto = headers.get("x-forwarded-proto") || "https";
+  if (host) return `${proto}://${host}`;
+  return new URL(request.url).origin;
+}
+
 function rewriteM3u8Playlist(body: string, sourceUrl: string, origin: string) {
   return body
     .split("\n")
@@ -187,6 +195,7 @@ export async function GET(
 
   try {
     const url = new URL(request.url);
+    const origin = publicOrigin(request);
     let streamUrl = "";
 
     if (type === "vod") {
@@ -274,7 +283,7 @@ export async function GET(
       if (!text.includes("#EXTM3U")) {
         return NextResponse.json({ error: "פלייליסט HLS לא תקין" }, { status: 503 });
       }
-      const rewritten = rewriteM3u8Playlist(text, streamUrl, url.origin);
+      const rewritten = rewriteM3u8Playlist(text, streamUrl, origin);
       return new NextResponse(rewritten, {
         status: 200,
         headers: mediaHeaders(upstream, "application/vnd.apple.mpegurl; charset=utf-8"),
