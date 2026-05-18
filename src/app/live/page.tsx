@@ -25,6 +25,10 @@ export default function LivePage() {
       try {
         const res = await getLive();
         setData(res);
+        // Mobile performance: don't render 14k channels at once.
+        // Default to Israel category when available.
+        const israel = res.categories?.find((c) => c.category_id === "1" || /israel|ישראל/i.test(c.category_name));
+        if (israel) setCategory(israel.category_id);
       } catch {
         setError("שגיאה בטעינת ערוצי הלייב");
       } finally {
@@ -43,18 +47,21 @@ export default function LivePage() {
 
   const filtered = useMemo(() => {
     if (!data) return [];
-    return (data.streams || []).filter((channel) => {
+    const q = query.trim().toLowerCase();
+    const list = (data.streams || []).filter((channel) => {
       const matchesCategory = category ? channel.category_id === category : true;
-      const matchesQuery = query ? channel.name.toLowerCase().includes(query.toLowerCase()) : true;
+      const matchesQuery = q ? channel.name.toLowerCase().includes(q) : true;
       return matchesCategory && matchesQuery;
     });
+    // Hard cap visible cards for mobile speed. Search/category narrows the list.
+    return list.slice(0, 240);
   }, [data, category, query]);
 
   useEffect(() => {
     let stale = false;
 
     const loadEpg = async () => {
-      const subset = filtered.slice(0, 15); // limit to reduce load
+      const subset = filtered.slice(0, 6); // keep mobile fast and avoid IPTV API 429
       const promises = subset.map(async (channel) => {
         try {
           const epg = await getEpg(channel.stream_id);
@@ -95,7 +102,7 @@ export default function LivePage() {
         <SearchBar
           value={query}
           onChange={setQuery}
-          suggestions={(data?.streams || []).map((s) => ({ id: s.stream_id, type: "live" as const, title: s.name }))}
+          suggestions={(data?.streams || []).slice(0, 600).map((s) => ({ id: s.stream_id, type: "live" as const, title: s.name }))}
         />
         {data?.categories && (
           <CategoryBar
