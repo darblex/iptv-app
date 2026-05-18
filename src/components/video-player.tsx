@@ -90,9 +90,9 @@ export default function VideoPlayer({ src, type, title, poster }: Props) {
       if (cancelled) return;
       const bustedSrc = loadKey > 0 ? `${src}${src.includes("?") ? "&" : "?"}_r=${Date.now()}` : src;
 
-      // HLS-first: for live streams, prefer HLS.js over mpegts when URL is m3u8 or server sends m3u8
-      // Try HLS first (works for both .m3u8 URLs and live streams)
-      if ((bustedSrc.includes(".m3u8") || type === "live") && Hls.isSupported()) {
+      // HLS only for actual HLS playlists. Xtream live endpoints usually return
+      // raw MPEG-TS, and those must go through mpegts.js instead of HLS.js.
+      if (bustedSrc.includes(".m3u8") && Hls.isSupported()) {
         const hls = new Hls({
           enableWorker: true,
           lowLatencyMode: type === "live",
