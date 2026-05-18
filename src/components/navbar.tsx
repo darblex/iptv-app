@@ -18,10 +18,10 @@ export default function Navbar() {
 
   return (
     <header className="sticky top-0 z-40 hidden w-full lg:block">
-      <div className="backdrop-blur-xl bg-[#0a0a0f]/80 border-b border-white/5">
+      <div className="border-b border-white/10 bg-[#05050a]/70 shadow-[0_10px_40px_rgba(0,0,0,0.25)] backdrop-blur-2xl">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight">
-            <div className="h-10 w-10 rounded-2xl bg-gradient-to-br from-primary/80 via-primary to-blue-500 shadow-lg shadow-primary/30 flex items-center justify-center text-lg">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-300 via-primary to-purple-500 text-lg shadow-lg shadow-cyan-400/30">
               <Flame className="h-5 w-5" />
             </div>
             <div className="leading-tight">
@@ -41,8 +41,8 @@ export default function Navbar() {
                   className={cn(
                     "group flex items-center gap-2 rounded-full px-4 py-2 text-sm transition-all",
                     active
-                      ? "bg-white/10 text-white shadow-[0_10px_40px_rgba(37,99,235,0.35)]"
-                      : "text-slate-300 hover:bg-white/5 hover:text-white"
+                      ? "bg-gradient-to-l from-cyan-400/22 to-purple-500/22 text-white shadow-[0_10px_36px_rgba(0,200,240,0.24)] ring-1 ring-cyan-300/25"
+                      : "text-slate-300 hover:bg-white/5 hover:text-white hover:shadow-[0_8px_30px_rgba(0,200,240,0.12)]"
                   )}
                 >
                   <Icon className="h-4 w-4" />

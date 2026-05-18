@@ -17,8 +17,8 @@ export default function CategoryBar({ categories, active, onSelect, allLabel = "
         <button
           onClick={() => onSelect?.(null)}
           className={cn(
-            "px-4 py-2 rounded-full border border-white/10 bg-white/5 text-sm transition hover:border-primary/40 hover:text-white",
-            !active && "bg-primary/20 text-white border-primary/40 shadow-[0_10px_30px_rgba(37,99,235,0.25)]"
+            "rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm transition hover:border-cyan-300/40 hover:text-white",
+            !active && "border-cyan-300/40 bg-gradient-to-l from-cyan-400/20 to-purple-500/20 text-white shadow-[0_10px_30px_rgba(0,200,240,0.22)]"
           )}
         >
           {allLabel}
@@ -28,9 +28,9 @@ export default function CategoryBar({ categories, active, onSelect, allLabel = "
             key={cat.category_id}
             onClick={() => onSelect?.(cat.category_id)}
             className={cn(
-              "px-4 py-2 rounded-full border border-white/5 bg-white/5 text-sm text-slate-200 transition hover:border-primary/40 hover:text-white",
+              "rounded-full border border-white/5 bg-white/5 px-4 py-2 text-sm text-slate-200 transition hover:border-cyan-300/40 hover:text-white",
               active === cat.category_id &&
-                "bg-primary/15 border-primary/50 text-white shadow-[0_10px_30px_rgba(37,99,235,0.25)]"
+                "border-cyan-300/50 bg-gradient-to-l from-cyan-400/18 to-purple-500/18 text-white shadow-[0_10px_30px_rgba(0,200,240,0.22)]"
             )}
           >
             {cat.category_name}

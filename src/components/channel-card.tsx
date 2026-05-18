@@ -16,7 +16,7 @@ interface Props {
 
 export default function ChannelCard({ channel, onClick, now, next, isFavorite, onToggleFavorite }: Props) {
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-white/5 bg-gradient-to-b from-white/5 via-white/3 to-transparent p-4 transition hover:-translate-y-1 hover:border-primary/40 hover:shadow-[0_15px_50px_rgba(37,99,235,0.25)]">
+    <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-b from-white/8 via-white/4 to-cyan-950/10 p-4 shadow-[0_15px_45px_rgba(0,0,0,0.25)] backdrop-blur transition hover:-translate-y-1 hover:border-cyan-300/40 hover:shadow-[0_20px_60px_rgba(0,200,240,0.22)]">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
           <div
@@ -29,7 +29,7 @@ export default function ChannelCard({ channel, onClick, now, next, isFavorite, o
           />
           <div>
             <p className="text-base font-semibold text-white">{channel.name}</p>
-            <p className="text-xs text-slate-400">ערוץ חי</p>
+            <p className="live-pulse mt-1 inline-flex rounded-full bg-rose-500/18 px-2 py-0.5 text-[10px] font-bold text-rose-100 ring-1 ring-rose-400/30">LIVE</p>
           </div>
         </div>
         <button
@@ -48,7 +48,7 @@ export default function ChannelCard({ channel, onClick, now, next, isFavorite, o
 
       <button
         onClick={onClick}
-        className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary/80 px-4 py-3 text-sm font-semibold text-white transition hover:bg-primary"
+        className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-l from-cyan-400 to-purple-500 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-cyan-500/20 transition hover:scale-[1.01] hover:shadow-cyan-400/30"
       >
         <Play className="h-4 w-4" /> צפה עכשיו
       </button>

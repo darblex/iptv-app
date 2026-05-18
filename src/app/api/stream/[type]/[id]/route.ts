@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { StreamType, resolveStreamUrl, getPrimaryHost, getVodInfo, getSeriesInfo } from "@/lib/xtream";
+import { StreamType, resolveStreamUrl, getVodInfo, getSeriesInfo } from "@/lib/xtream";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,6 +11,7 @@ interface Params {
 
 const ALLOWED_TYPES: StreamType[] = ["live", "vod", "series"];
 const MAX_REDIRECTS = 8;
+const STALL_TIMEOUT_MS = 30_000;
 
 const UPSTREAM_HEADERS: HeadersInit = {
   "User-Agent":
@@ -19,24 +20,11 @@ const UPSTREAM_HEADERS: HeadersInit = {
   Connection: "keep-alive",
 };
 
-function rewriteRedirectUrl(location: string, primaryHost: string): string {
-  try {
-    const parsed = new URL(location);
-    if (parsed.hostname !== primaryHost) {
-      parsed.hostname = primaryHost;
-      parsed.port = "";
-    }
-    return parsed.toString();
-  } catch {
-    return location;
-  }
+function isRedirect(status: number) {
+  return status >= 300 && status < 400;
 }
 
-async function fetchWithFallback(
-  url: string,
-  primaryHost: string,
-  headers: HeadersInit,
-): Promise<Response> {
+async function fetchWithFallback(url: string, headers: HeadersInit): Promise<Response> {
   try {
     return await fetch(url, {
       headers,
@@ -53,10 +41,10 @@ async function fetchWithFallback(
         redirect: "manual",
       });
 
-      if (res.status >= 300 && res.status < 400) {
+      if (isRedirect(res.status)) {
         const location = res.headers.get("location");
         if (!location) break;
-        currentUrl = rewriteRedirectUrl(location, primaryHost);
+        currentUrl = new URL(location, currentUrl).toString();
         continue;
       }
 
@@ -65,6 +53,100 @@ async function fetchWithFallback(
 
     return fetch(url, { headers, cache: "no-store", redirect: "follow" });
   }
+}
+
+function isM3u8(contentType: string, streamUrl: string) {
+  return contentType.includes("mpegurl") || contentType.includes("x-mpegurl") || /\.m3u8?(\?|$)/i.test(streamUrl);
+}
+
+function proxyUrl(absoluteUrl: string, origin: string) {
+  return `${origin}/api/hls-proxy?url=${encodeURIComponent(absoluteUrl)}`;
+}
+
+function rewriteM3u8Playlist(body: string, sourceUrl: string, origin: string) {
+  return body
+    .split("\n")
+    .map((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return line;
+
+      if (trimmed.startsWith("#EXT-X-KEY") || trimmed.startsWith("#EXT-X-MAP")) {
+        return line.replace(/URI="([^"]+)"/g, (_match, uri) => {
+          const absolute = new URL(uri, sourceUrl).toString();
+          return `URI="${proxyUrl(absolute, origin)}"`;
+        });
+      }
+
+      if (trimmed.startsWith("#")) return line;
+
+      const absolute = new URL(trimmed, sourceUrl).toString();
+      return proxyUrl(absolute, origin);
+    })
+    .join("\n");
+}
+
+function withStallTimeout(body: ReadableStream<Uint8Array> | null) {
+  if (!body) return null;
+
+  const reader = body.getReader();
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      const resetTimer = () => {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => {
+          try {
+            controller.error(new Error("Upstream stream stalled"));
+            reader.cancel().catch(() => {});
+          } catch {}
+        }, STALL_TIMEOUT_MS);
+      };
+
+      const pump = async () => {
+        resetTimer();
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (value) {
+              resetTimer();
+              controller.enqueue(value);
+            }
+          }
+          if (timer) clearTimeout(timer);
+          controller.close();
+        } catch (error) {
+          if (timer) clearTimeout(timer);
+          controller.error(error);
+        }
+      };
+
+      pump();
+    },
+    cancel() {
+      if (timer) clearTimeout(timer);
+      return reader.cancel();
+    },
+  });
+}
+
+function mediaHeaders(upstream: Response, contentTypeOverride?: string) {
+  const responseHeaders = new Headers();
+  for (const h of [
+    "content-type",
+    "content-length",
+    "accept-ranges",
+    "content-range",
+    "cache-control",
+  ]) {
+    const v = upstream.headers.get(h);
+    if (v) responseHeaders.set(h, v);
+  }
+  if (contentTypeOverride) responseHeaders.set("content-type", contentTypeOverride);
+  responseHeaders.set("access-control-allow-origin", "*");
+  responseHeaders.set("x-content-type-options", "nosniff");
+  return responseHeaders;
 }
 
 export async function GET(
@@ -78,11 +160,7 @@ export async function GET(
   }
 
   const numericId = Number(id);
-  if (
-    !Number.isFinite(numericId) ||
-    numericId <= 0 ||
-    !Number.isInteger(numericId)
-  ) {
+  if (!Number.isFinite(numericId) || numericId <= 0 || !Number.isInteger(numericId)) {
     return NextResponse.json({ error: "מזהה זרם לא תקין" }, { status: 400 });
   }
 
@@ -107,14 +185,13 @@ export async function GET(
       try {
         const info = await getSeriesInfo(numericId);
         const seasonEpisodes = info.episodes?.[season] || [];
-        const epObj = seasonEpisodes.find((e) => e.episode_num == episode || e.info?.episode == episode) 
-                      || seasonEpisodes[Number(episode) - 1];
+        const epObj =
+          seasonEpisodes.find((e) => e.episode_num == episode || e.info?.episode == episode) ||
+          seasonEpisodes[Number(episode) - 1];
 
-        if (epObj) {
-          streamUrl = await resolveStreamUrl("series", epObj.id, epObj.container_extension || "mp4");
-        } else {
-          streamUrl = await resolveStreamUrl("series", numericId, "mp4");
-        }
+        streamUrl = epObj
+          ? await resolveStreamUrl("series", epObj.id, epObj.container_extension || "mp4")
+          : await resolveStreamUrl("series", numericId, "mp4");
       } catch (e) {
         console.error("Failed to fetch series info", e);
         streamUrl = await resolveStreamUrl("series", numericId, "mp4");
@@ -123,75 +200,53 @@ export async function GET(
       streamUrl = await resolveStreamUrl(type as StreamType, numericId);
     }
 
-    const primaryHost = getPrimaryHost();
     const range = request.headers.get("range");
-
-    const headers: Record<string, string> = { ...UPSTREAM_HEADERS } as Record<
-      string,
-      string
-    >;
+    const headers: Record<string, string> = { ...UPSTREAM_HEADERS } as Record<string, string>;
     if (range) headers.Range = range;
 
-    const upstream = await fetchWithFallback(streamUrl, primaryHost, headers);
+    const upstream = await fetchWithFallback(streamUrl, headers);
     const contentType = upstream.headers.get("content-type") ?? "";
 
     if (!upstream.ok && upstream.status !== 206) {
-      return NextResponse.json(
-        { error: "הזרם אינו זמין כעת" },
-        { status: upstream.status },
-      );
+      return NextResponse.json({ error: "הזרם אינו זמין כעת" }, { status: upstream.status });
+    }
+
+    if (isM3u8(contentType, streamUrl)) {
+      const text = await upstream.text();
+      if (!text.includes("#EXTM3U")) {
+        return NextResponse.json({ error: "פלייליסט HLS לא תקין" }, { status: 503 });
+      }
+      const rewritten = rewriteM3u8Playlist(text, streamUrl, url.origin);
+      return new NextResponse(rewritten, {
+        status: 200,
+        headers: mediaHeaders(upstream, "application/vnd.apple.mpegurl; charset=utf-8"),
+      });
     }
 
     const isMediaContent =
       contentType.startsWith("video/") ||
       contentType.startsWith("audio/") ||
-      contentType.includes("mpegurl") ||
       contentType.includes("octet-stream") ||
       contentType.includes("mp2t");
 
     if (!isMediaContent) {
       const text = await upstream.text();
-      if (
-        text.includes("FORCED_COUNTRY_INVALID") ||
-        text.includes("Country does not match")
-      ) {
-        return NextResponse.json(
-          { error: "הצפייה מוגבלת למיקום גיאוגרפי מסוים (Geo-Blocked)" },
-          { status: 403 },
-        );
+      if (text.includes("FORCED_COUNTRY_INVALID") || text.includes("Country does not match")) {
+        return NextResponse.json({ error: "הצפייה מוגבלת למיקום גיאוגרפי מסוים (Geo-Blocked)" }, { status: 403 });
       }
-      return NextResponse.json(
-        { error: "הזרם אינו זמין כעת" },
-        { status: 503 },
-      );
+      return NextResponse.json({ error: "הזרם אינו זמין כעת" }, { status: 503 });
     }
 
-    const responseHeaders = new Headers();
-    for (const h of [
-      "content-type",
-      "content-length",
-      "accept-ranges",
-      "content-range",
-      "cache-control",
-    ]) {
-      const v = upstream.headers.get(h);
-      if (v) responseHeaders.set(h, v);
-    }
-
-    return new NextResponse(upstream.body, {
+    return new NextResponse(withStallTimeout(upstream.body), {
       status: upstream.status,
-      headers: responseHeaders,
+      headers: mediaHeaders(upstream),
     });
   } catch (error) {
     console.error(`/api/stream/${type}/${id} error`, error);
-    return NextResponse.json(
-      { error: "שגיאה בהפעלת הזרם" },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "שגיאה בהפעלת הזרם" }, { status: 500 });
   }
 }
 
-/** HEAD handler so the client can probe availability without downloading. */
 export async function HEAD(
   request: Request,
   context: { params: Promise<Params> },

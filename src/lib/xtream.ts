@@ -11,6 +11,7 @@ export interface XtreamAccount {
 interface AccountState extends XtreamAccount {
   healthy: boolean;
   lastChecked: number;
+  freeSlots: number;
 }
 
 export interface XtreamCategory {
@@ -183,6 +184,7 @@ function loadAccounts(): AccountState[] {
     ...account,
     healthy: false,
     lastChecked: 0,
+    freeSlots: 0,
   }));
 }
 
@@ -224,18 +226,35 @@ async function checkHealth(account: AccountState): Promise<boolean> {
     const search = new URLSearchParams({
       username: account.username,
       password: account.password,
-      action: "get_live_categories",
     });
     const url = `${buildBaseUrl(account)}/player_api.php?${search.toString()}`;
     const res = await fetch(url, {
       cache: "no-store",
       signal: controller.signal,
     });
-    account.healthy = res.ok;
+
+    if (!res.ok) {
+      account.healthy = false;
+      account.freeSlots = 0;
+      account.lastChecked = now;
+      return false;
+    }
+
+    const data = await res.json().catch(() => null) as {
+      user_info?: { auth?: number; active_cons?: string | number; max_connections?: string | number };
+    } | null;
+    const userInfo = data?.user_info;
+    const active = Number(userInfo?.active_cons ?? 0);
+    const max = Number(userInfo?.max_connections ?? 1);
+    const authenticated = userInfo?.auth === 1;
+
+    account.healthy = authenticated && (!Number.isFinite(max) || max <= 0 || active < max);
+    account.freeSlots = account.healthy ? Math.max(1, max - active) : 0;
     account.lastChecked = now;
-    return res.ok;
+    return account.healthy;
   } catch (error) {
     account.healthy = false;
+    account.freeSlots = 0;
     account.lastChecked = now;
     console.error("IPTV health check failed", error);
     return false;
@@ -247,14 +266,19 @@ async function checkHealth(account: AccountState): Promise<boolean> {
 async function pickAccount(): Promise<AccountState> {
   assertAccounts();
 
+  const healthyAccounts: AccountState[] = [];
   for (let i = 0; i < accounts.length; i++) {
     const idx = (roundRobinIndex + i) % accounts.length;
     const account = accounts[idx];
-    const healthy = await checkHealth(account);
-    if (healthy) {
-      roundRobinIndex = (idx + 1) % accounts.length;
-      return account;
-    }
+    if (await checkHealth(account)) healthyAccounts.push(account);
+  }
+
+  if (healthyAccounts.length) {
+    healthyAccounts.sort((a, b) => b.freeSlots - a.freeSlots);
+    const selected = healthyAccounts[0];
+    const selectedIdx = accounts.indexOf(selected);
+    roundRobinIndex = selectedIdx >= 0 ? (selectedIdx + 1) % accounts.length : (roundRobinIndex + 1) % accounts.length;
+    return selected;
   }
 
   throw new Error("אין חשבון IPTV זמין כרגע. נסו שוב בעוד רגע.");
