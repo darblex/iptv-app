@@ -82,7 +82,8 @@ export async function GET(request: Request, context: { params: Promise<Params> }
       // return an HLS wrapper via the working relay. Android/desktop still get
       // a direct HTTPS TS URL and use their own IP.
       if (isAppleMobile && relayBase) {
-        streamUrl = `${relayBase}/hls-live/${account.username}/${account.password}/${numericId}.m3u8?_host=${encodeURIComponent(account.host)}&_port=${account.port}&_proto=${account.https ? "https" : "http"}`;
+        const origin = `${request.headers.get("x-forwarded-proto") || "https"}://${request.headers.get("x-forwarded-host") || request.headers.get("host")}`;
+        streamUrl = `${origin}/api/ios-hls/live/${numericId}?token=${encodeURIComponent(token || "")}`;
       } else {
         streamUrl = buildDirectUrl(account.host, 443, proto, "live", account.username, account.password, numericId, "ts");
       }
