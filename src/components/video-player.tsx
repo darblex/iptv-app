@@ -39,6 +39,7 @@ export default function VideoPlayer({ src, type, title, poster }: Props) {
   const [, setRetryCount] = useState(0);
   const [loadKey, setLoadKey] = useState(0);
   const [status, setStatus] = useState<"idle" | "loading" | "ready" | "retrying" | "error">("idle");
+  const [tapToPlay, setTapToPlay] = useState(false);
 
   const cleanupPlayers = useCallback(() => {
     if (retryTimerRef.current) {
@@ -85,23 +86,12 @@ export default function VideoPlayer({ src, type, title, poster }: Props) {
     video.removeAttribute("src");
     video.load();
 
-    const attach = async () => {
+      const attach = async () => {
       if (cancelled) return;
       const bustedSrc = loadKey > 0 ? `${src}${src.includes("?") ? "&" : "?"}_r=${Date.now()}` : src;
 
-      if (type === "live") {
-        const mpegts = (await import("mpegts.js")).default;
-        if (cancelled) return;
-
-        if (mpegts.isSupported()) {
-          const player = mpegts.createPlayer({ type: "mpegts", url: bustedSrc, isLive: true });
-          player.attachMediaElement(video);
-          player.load();
-          tsRef.current = player;
-          return;
-        }
-      }
-
+      // HLS-first: for live streams, prefer HLS.js over mpegts when URL is m3u8 or server sends m3u8
+      // Try HLS first (works for both .m3u8 URLs and live streams)
       if ((bustedSrc.includes(".m3u8") || type === "live") && Hls.isSupported()) {
         const hls = new Hls({
           enableWorker: true,
@@ -130,13 +120,39 @@ export default function VideoPlayer({ src, type, title, poster }: Props) {
           }
           scheduleRetry("שגיאת נגן");
         });
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          if (!cancelled) {
+            video.play().catch(() => setTapToPlay(true));
+          }
+        });
         hls.loadSource(bustedSrc);
         hls.attachMedia(video);
         hlsRef.current = hls;
         return;
       }
 
-      video.src = bustedSrc;
+      // Fallback: mpegts.js for raw MPEG-TS live streams
+      if (type === "live") {
+        const mpegts = (await import("mpegts.js")).default;
+        if (cancelled) return;
+
+        if (mpegts.isSupported()) {
+          const player = mpegts.createPlayer({ type: "mpegts", url: bustedSrc, isLive: true });
+          player.attachMediaElement(video);
+          player.load();
+          tsRef.current = player;
+          video.play().catch(() => setTapToPlay(true));
+          return;
+        }
+      }
+
+      // Direct source fallback — only if URL looks like a valid video file
+      if (/\.(mp4|mkv|avi|mov|webm|ts)(\?|$)/i.test(bustedSrc)) {
+        video.src = bustedSrc;
+        video.play().catch(() => setTapToPlay(true));
+      } else {
+        scheduleRetry("פורמט לא נתמך");
+      }
     };
 
     attach().catch((error) => {
@@ -256,6 +272,26 @@ export default function VideoPlayer({ src, type, title, poster }: Props) {
         <Radio className="h-3.5 w-3.5" /> {statusLabel}
       </div>
       <video ref={videoRef} poster={poster} controls={false} playsInline className="h-full w-full bg-black" />
+
+      {tapToPlay && (
+        <button
+          onClick={() => {
+            const video = videoRef.current;
+            if (video) {
+              video.play()
+                .then(() => setTapToPlay(false))
+                .catch((e) => {
+                  console.error("Tap-to-play error", e);
+                  setErrorMessage("לא ניתן להפעיל את הזרם — בדוק חיבור או נסה רעננ");
+                });
+            }
+          }}
+          className="pointer-events-auto absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black/50 text-white backdrop-blur-sm"
+        >
+          <Play className="h-16 w-16 drop-shadow-xl" />
+          <span className="text-sm font-semibold">לחץ להפעלה</span>
+        </button>
+      )}
 
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/40" />
 

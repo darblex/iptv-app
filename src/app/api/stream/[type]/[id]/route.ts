@@ -131,11 +131,10 @@ function withStallTimeout(body: ReadableStream<Uint8Array> | null) {
   });
 }
 
-function mediaHeaders(upstream: Response, contentTypeOverride?: string) {
+function mediaHeaders(upstream: Response, contentTypeOverride?: string, isLive = false) {
   const responseHeaders = new Headers();
   for (const h of [
     "content-type",
-    "content-length",
     "accept-ranges",
     "content-range",
     "cache-control",
@@ -143,9 +142,16 @@ function mediaHeaders(upstream: Response, contentTypeOverride?: string) {
     const v = upstream.headers.get(h);
     if (v) responseHeaders.set(h, v);
   }
+  // Do NOT forward content-length for live streams — body is unbounded / chunked
+  if (!isLive) {
+    const cl = upstream.headers.get("content-length");
+    if (cl) responseHeaders.set("content-length", cl);
+  }
   if (contentTypeOverride) responseHeaders.set("content-type", contentTypeOverride);
   responseHeaders.set("access-control-allow-origin", "*");
   responseHeaders.set("x-content-type-options", "nosniff");
+  // Prevent nginx/proxy buffering — required for live streams
+  responseHeaders.set("x-accel-buffering", "no");
   return responseHeaders;
 }
 
@@ -208,8 +214,22 @@ export async function GET(
     const contentType = upstream.headers.get("content-type") ?? "";
 
     if (!upstream.ok && upstream.status !== 206) {
-      return NextResponse.json({ error: "הזרם אינו זמין כעת" }, { status: upstream.status });
+      let upstreamDetail = "";
+      try {
+        upstreamDetail = await upstream.text();
+      } catch { /* ignore */ }
+      console.error(`Upstream ${upstream.status} for ${streamUrl}:`, upstreamDetail.slice(0, 500));
+      return NextResponse.json(
+        { error: `הזרם אינו זמין כעת (upstream ${upstream.status})`, detail: upstreamDetail.slice(0, 200) },
+        { status: upstream.status },
+      );
     }
+
+    // Force video/mp2t for MPEG-TS segments (.ts URLs or octet-stream that look like TS)
+    const isTsSegment =
+      /\.ts(\?|$)/i.test(streamUrl) ||
+      contentType.includes("mp2t") ||
+      contentType.includes("mpeg2");
 
     if (isM3u8(contentType, streamUrl)) {
       const text = await upstream.text();
@@ -237,9 +257,12 @@ export async function GET(
       return NextResponse.json({ error: "הזרם אינו זמין כעת" }, { status: 503 });
     }
 
+    const isLiveStream = type === "live";
+    const tsTypeOverride = isTsSegment && !isM3u8(contentType, streamUrl) ? "video/mp2t" : undefined;
+
     return new NextResponse(withStallTimeout(upstream.body), {
       status: upstream.status,
-      headers: mediaHeaders(upstream),
+      headers: mediaHeaders(upstream, tsTypeOverride, isLiveStream),
     });
   } catch (error) {
     console.error(`/api/stream/${type}/${id} error`, error);

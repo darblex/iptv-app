@@ -82,13 +82,29 @@ export async function GET(request: Request) {
   });
 
   if (!upstream.ok && upstream.status !== 206) {
-    return NextResponse.json({ error: "segment unavailable" }, { status: upstream.status });
+    let detail = "";
+    try { detail = await upstream.text(); } catch { /* ignore */ }
+    console.error(`hls-proxy upstream ${upstream.status} for ${target}:`, detail.slice(0, 300));
+    return NextResponse.json(
+      { error: "segment unavailable", status: upstream.status, detail: detail.slice(0, 200) },
+      { status: upstream.status },
+    );
   }
+
+  const upstreamContentType = upstream.headers.get("content-type") ?? "";
+  // Force video/mp2t for .ts segments (some servers send octet-stream)
+  const isTsSegment =
+    /\.ts(\?|$)/i.test(target) ||
+    upstreamContentType.includes("mp2t") ||
+    upstreamContentType.includes("mpeg2");
+  const isM3u8Segment =
+    upstreamContentType.includes("mpegurl") ||
+    upstreamContentType.includes("x-mpegurl") ||
+    /\.m3u8?(\?|$)/i.test(target);
 
   const responseHeaders = new Headers();
   for (const h of [
     "content-type",
-    "content-length",
     "accept-ranges",
     "content-range",
     "cache-control",
@@ -96,8 +112,18 @@ export async function GET(request: Request) {
     const v = upstream.headers.get(h);
     if (v) responseHeaders.set(h, v);
   }
+  // Don't forward content-length for live/chunked streams
+  if (!isTsSegment) {
+    const cl = upstream.headers.get("content-length");
+    if (cl) responseHeaders.set("content-length", cl);
+  }
+  if (isTsSegment && !isM3u8Segment) {
+    responseHeaders.set("content-type", "video/mp2t");
+  }
   responseHeaders.set("access-control-allow-origin", "*");
   responseHeaders.set("x-content-type-options", "nosniff");
+  // Prevent proxy buffering on live segments
+  responseHeaders.set("x-accel-buffering", "no");
 
   return new NextResponse(withStallTimeout(upstream.body), {
     status: upstream.status,

@@ -377,7 +377,7 @@ class XtreamClient {
 
   buildStreamUrl(type: StreamType, id: number | string, ext?: string): string {
     const extension = ext ? ext : (type === "live" ? "ts" : "mp4");
-    const prefix = type === "vod" ? "movie/" : type === "series" ? "series/" : "";
+    const prefix = type === "vod" ? "movie/" : type === "series" ? "series/" : "live/";
     return `${buildBaseUrl(this.account)}/${prefix}${this.account.username}/${this.account.password}/${id}.${extension}`;
   }
 }
@@ -419,12 +419,13 @@ export async function getSeriesData(): Promise<SeriesResponse> {
 
 export async function getEpg(streamId: number): Promise<EpgResponse> {
   const client = await getClient();
-  const [short, table] = await Promise.all([
-    client.getShortEpg(streamId),
-    client.getSimpleDataTable(streamId),
-  ]);
 
-  const combined = [...(short.epg_listings || []), ...(table.epg_listings || [])];
+  // Keep this deliberately lightweight. The previous implementation fired two
+  // EPG requests per visible channel, which quickly triggered Xtream 429s and
+  // starved the account while the player was trying to open live streams.
+  const short = await client.getShortEpg(streamId).catch(() => ({ epg_listings: [] }));
+
+  const combined = [...(short.epg_listings || [])];
   combined.sort((a, b) => (a.start || a.start_timestamp || 0) - (b.start || b.start_timestamp || 0));
 
   const now = Date.now() / 1000;
