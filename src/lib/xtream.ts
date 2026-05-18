@@ -461,6 +461,14 @@ export async function resolveStreamUrl(type: StreamType, id: number | string, ex
   return client.buildStreamUrl(type, id, ext);
 }
 
+/** Returns a direct upstream URL (no relay), for client-side playback from the user's own IP. */
+export async function resolveDirectStreamUrl(type: StreamType, id: number | string, ext?: string): Promise<string> {
+  const account = await pickAccount();
+  const extension = ext ?? (type === "live" ? "ts" : "mp4");
+  const prefix = type === "vod" ? "movie/" : type === "series" ? "series/" : "live/";
+  return `${buildBaseUrl(account)}/${prefix}${account.username}/${account.password}/${id}.${extension}`;
+}
+
 export async function getVodInfo(vodId: number): Promise<VodInfoResponse> {
   const client = await getClient();
   return client.getVodInfo(vodId);

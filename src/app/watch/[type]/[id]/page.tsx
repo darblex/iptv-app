@@ -27,6 +27,17 @@ function WatchContent({ params: paramsPromise }: Props) {
   const [next, setNext] = useState<EpgEntry | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ext, setExt] = useState<string | null>(null);
+  const [directSrc, setDirectSrc] = useState<string | null>(null);
+
+  // Live streams: fetch the direct upstream URL so each viewer connects
+  // from their own IP, not through the Railway server relay.
+  useEffect(() => {
+    if (type !== "live" || !streamId) return;
+    fetch(`/api/stream-url/live/${streamId}`)
+      .then(r => r.json())
+      .then(d => { if (d.url) setDirectSrc(d.url); })
+      .catch(() => {});
+  }, [type, streamId]);
 
   useEffect(() => {
     const loadMeta = async () => {
@@ -78,7 +89,9 @@ function WatchContent({ params: paramsPromise }: Props) {
 
   const season = searchParams.get("season");
   const episode = searchParams.get("episode");
-  const src = `/api/stream/${type}/${streamId}${type === 'vod' && ext ? `?ext=${ext}` : type === 'series' && (season || episode) ? `?season=${season || 1}&episode=${episode || 1}` : ''}`;
+  const src = type === "live" && directSrc
+    ? directSrc
+    : `/api/stream/${type}/${streamId}${type === 'vod' && ext ? `?ext=${ext}` : type === 'series' && (season || episode) ? `?season=${season || 1}&episode=${episode || 1}` : ''}`;
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 lg:px-6 lg:py-10">

@@ -90,8 +90,8 @@ export default function VideoPlayer({ src, type, title, poster }: Props) {
       if (cancelled) return;
       const bustedSrc = loadKey > 0 ? `${src}${src.includes("?") ? "&" : "?"}_r=${Date.now()}` : src;
 
-      // HLS only for actual HLS playlists. Xtream live endpoints usually return
-      // raw MPEG-TS, and those must go through mpegts.js instead of HLS.js.
+      // For direct ilvip.net .ts URLs (client-side playback) use mpegts.js directly.
+      // For .m3u8 use HLS.js.
       if (bustedSrc.includes(".m3u8") && Hls.isSupported()) {
         const hls = new Hls({
           enableWorker: true,
