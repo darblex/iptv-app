@@ -164,6 +164,18 @@ function loadAccounts(): AccountState[] {
     }
   }
 
+  // If IPTV_ACCOUNTS is set, use it exclusively — don't also add the single-account vars
+  // to avoid duplicate accounts and double health-check contention.
+  if (accountsFromEnv.length > 0) {
+    return accountsFromEnv.map((account) => ({
+      ...account,
+      healthy: false,
+      lastChecked: 0,
+      freeSlots: 0,
+      maxConnections: 1,
+    }));
+  }
+
   const singleAccount =
     process.env.IPTV_HOST &&
     process.env.IPTV_PORT &&
