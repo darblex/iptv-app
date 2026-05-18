@@ -12,6 +12,7 @@ interface AccountState extends XtreamAccount {
   healthy: boolean;
   lastChecked: number;
   freeSlots: number;
+  maxConnections: number;
 }
 
 export interface XtreamCategory {
@@ -185,6 +186,7 @@ function loadAccounts(): AccountState[] {
     healthy: false,
     lastChecked: 0,
     freeSlots: 0,
+    maxConnections: 1,
   }));
 }
 
@@ -250,6 +252,7 @@ async function checkHealth(account: AccountState): Promise<boolean> {
 
     account.healthy = authenticated && (!Number.isFinite(max) || max <= 0 || active < max);
     account.freeSlots = account.healthy ? Math.max(1, max - active) : 0;
+    account.maxConnections = Number.isFinite(max) && max > 0 ? max : 1;
     account.lastChecked = now;
     return account.healthy;
   } catch (error) {
@@ -483,4 +486,14 @@ export async function getSeriesInfo(seriesId: number): Promise<SeriesInfoRespons
 export function getPrimaryHost(): string {
   assertAccounts();
   return accounts[0].host;
+}
+
+/** Return all accounts + their cached max_connections for pool management. */
+export function getAccountsWithMaxConns(): { accounts: XtreamAccount[]; maxConns: number[] } {
+  return {
+    accounts: accounts.map(a => ({
+      host: a.host, port: a.port, username: a.username, password: a.password, https: a.https,
+    })),
+    maxConns: accounts.map(a => a.maxConnections),
+  };
 }

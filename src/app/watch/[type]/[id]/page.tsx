@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { notFound, useRouter, useSearchParams } from "next/navigation";
 import VideoPlayer from "@/components/video-player";
-import { getEpg, getLive, getSeries, getVod } from "@/lib/api";
+import { getEpg, getLive, getSeries, getVod, getDirectStreamUrl } from "@/lib/api";
 import type { EpgEntry, SeriesItem, StreamType } from "@/types/content";
 
 import { use } from "react";
@@ -29,15 +29,21 @@ function WatchContent({ params: paramsPromise }: Props) {
   const [ext, setExt] = useState<string | null>(null);
   const [directSrc, setDirectSrc] = useState<string | null>(null);
 
-  // Live streams: fetch the direct upstream URL so each viewer connects
-  // from their own IP, not through the Railway server relay.
+  // Fetch direct stream URL using leased account (user's own IP)
   useEffect(() => {
-    if (type !== "live" || !streamId) return;
-    fetch(`/api/stream-url/live/${streamId}`)
-      .then(r => r.json())
-      .then(d => { if (d.url) setDirectSrc(d.url); })
-      .catch(() => {});
-  }, [type, streamId]);
+    if (!streamId || !isValidType) return;
+    const fetchUrl = async () => {
+      try {
+        const extra = type === "vod" && ext ? { ext } :
+          type === "series" ? { season: searchParams.get("season") ?? "1", episode: searchParams.get("episode") ?? "1" } : undefined;
+        const url = await getDirectStreamUrl(type as "live" | "vod" | "series", streamId, extra);
+        setDirectSrc(url);
+      } catch {
+        setDirectSrc(null); // fallback to proxy
+      }
+    };
+    fetchUrl();
+  }, [type, streamId, ext, isValidType]);
 
   useEffect(() => {
     const loadMeta = async () => {
@@ -89,7 +95,7 @@ function WatchContent({ params: paramsPromise }: Props) {
 
   const season = searchParams.get("season");
   const episode = searchParams.get("episode");
-  const src = type === "live" && directSrc
+  const src = directSrc
     ? directSrc
     : `/api/stream/${type}/${streamId}${type === 'vod' && ext ? `?ext=${ext}` : type === 'series' && (season || episode) ? `?season=${season || 1}&episode=${episode || 1}` : ''}`;
 
