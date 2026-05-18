@@ -30,10 +30,25 @@ if (typeof setInterval !== "undefined") setInterval(cleanup, 60_000);
 
 function finalizeSegment(s: HlsStreamState) {
   if (!s.currentSize) return;
-  const data = Buffer.concat(s.current, s.currentSize);
-  s.segments.set(s.nextId++, data);
-  s.current = [];
-  s.currentSize = 0;
+  let data = Buffer.concat(s.current, s.currentSize);
+
+  // MPEG-TS packets are 188 bytes and should start with sync byte 0x47.
+  // iOS Safari is strict; never cut segments in the middle of a packet.
+  const sync = data.indexOf(0x47);
+  if (sync > 0) data = data.subarray(sync);
+  const cut = Math.floor(data.length / 188) * 188;
+  if (cut <= 0) {
+    s.current = [data];
+    s.currentSize = data.length;
+    return;
+  }
+
+  const segment = data.subarray(0, cut);
+  const remainder = data.subarray(cut);
+  if (segment[0] === 0x47) s.segments.set(s.nextId++, segment);
+  s.current = remainder.length ? [remainder] : [];
+  s.currentSize = remainder.length;
+
   while (s.segments.size > MAX_SEGMENTS) {
     const first = Math.min(...s.segments.keys());
     s.segments.delete(first);
