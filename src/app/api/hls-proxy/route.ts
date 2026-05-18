@@ -11,6 +11,37 @@ const UPSTREAM_HEADERS: HeadersInit = {
   Connection: "keep-alive",
 };
 
+function publicOrigin(request: Request) {
+  const headers = request.headers;
+  const host = headers.get("x-forwarded-host") || headers.get("host");
+  const proto = headers.get("x-forwarded-proto") || "https";
+  if (host) return `${proto}://${host}`;
+  return new URL(request.url).origin;
+}
+
+function proxyUrl(absoluteUrl: string, origin: string) {
+  return `${origin}/api/hls-proxy?url=${encodeURIComponent(absoluteUrl)}`;
+}
+
+function rewriteM3u8Playlist(body: string, sourceUrl: string, origin: string) {
+  return body
+    .split("\n")
+    .map((line) => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#EXT-X-PROGRAM-DATE-TIME")) return line;
+      if (trimmed.startsWith("#EXT-X-KEY") || trimmed.startsWith("#EXT-X-MAP")) {
+        return line.replace(/URI="([^"]+)"/g, (_match, uri) => {
+          const absolute = new URL(uri, sourceUrl).toString();
+          return `URI="${proxyUrl(absolute, origin)}"`;
+        });
+      }
+      if (trimmed.startsWith("#")) return line;
+      const absolute = new URL(trimmed, sourceUrl).toString();
+      return proxyUrl(absolute, origin);
+    })
+    .join("\n");
+}
+
 function withStallTimeout(body: ReadableStream<Uint8Array> | null) {
   if (!body) return null;
   const reader = body.getReader();
@@ -120,10 +151,23 @@ export async function GET(request: Request) {
   if (isTsSegment && !isM3u8Segment) {
     responseHeaders.set("content-type", "video/mp2t");
   }
+  if (isM3u8Segment) {
+    responseHeaders.set("content-type", "application/vnd.apple.mpegurl; charset=utf-8");
+  }
   responseHeaders.set("access-control-allow-origin", "*");
   responseHeaders.set("x-content-type-options", "nosniff");
   // Prevent proxy buffering on live segments
   responseHeaders.set("x-accel-buffering", "no");
+
+  if (isM3u8Segment) {
+    const text = await upstream.text();
+    const rewritten = rewriteM3u8Playlist(text, parsed.toString(), publicOrigin(request));
+    responseHeaders.delete("content-length");
+    return new NextResponse(rewritten, {
+      status: upstream.status,
+      headers: responseHeaders,
+    });
+  }
 
   return new NextResponse(withStallTimeout(upstream.body), {
     status: upstream.status,
