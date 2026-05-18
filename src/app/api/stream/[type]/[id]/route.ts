@@ -23,13 +23,15 @@ const UPSTREAM_HEADERS: HeadersInit = {
 const PUBLIC_LIVE_FALLBACKS: Record<number, string> = {
   // Public/legal broadcaster HLS fallbacks for major Israeli channels.
   // Used only when the configured Xtream provider returns 4xx/5xx.
-  44550: "https://kan11.media.kan.org.il/hls/live/2024514/2024514/master.m3u8",
-  267379: "https://kan11.media.kan.org.il/hls/live/2024514/2024514/master.m3u8",
+  44550: "https://ynet-live-01.ynet-pic1.yit.co.il/ynet/live.m3u8",
+  267379: "https://ynet-live-01.ynet-pic1.yit.co.il/ynet/live.m3u8",
+  17734: "https://reshet.g-mana.live/media/87f59c77-03f6-4bad-a648-897e095e7360/mainManifest.m3u8",
+  267380: "https://reshet.g-mana.live/media/87f59c77-03f6-4bad-a648-897e095e7360/mainManifest.m3u8",
   17725: "https://reshet.g-mana.live/media/87f59c77-03f6-4bad-a648-897e095e7360/mainManifest.m3u8",
   267381: "https://reshet.g-mana.live/media/87f59c77-03f6-4bad-a648-897e095e7360/mainManifest.m3u8",
-  17726: "https://ch14-channel14-content.akamaized.net/hls/live/2104807/CH14_CHANNEL14/master.m3u8",
-  267382: "https://ch14-channel14-content.akamaized.net/hls/live/2104807/CH14_CHANNEL14/master.m3u8",
-  74843: "https://bcovlive-a.akamaihd.net/d89ede8094c741b7924120b27764153c/eu-central-1/5377161796001/playlist.m3u8",
+  17726: "https://r.il.cdn-redge.media/livehls/oil/calcala/live/channel10/live.livx/playlist.m3u8",
+  267382: "https://r.il.cdn-redge.media/livehls/oil/calcala/live/channel10/live.livx/playlist.m3u8",
+  74843: "https://ynet-live-01.ynet-pic1.yit.co.il/ynet/live.m3u8",
   136439: "https://r.il.cdn-redge.media/livehls/oil/calcala/live/channel10/live.livx/playlist.m3u8",
 };
 
