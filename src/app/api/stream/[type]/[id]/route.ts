@@ -20,6 +20,19 @@ const UPSTREAM_HEADERS: HeadersInit = {
   Connection: "keep-alive",
 };
 
+const PUBLIC_LIVE_FALLBACKS: Record<number, string> = {
+  // Public/legal broadcaster HLS fallbacks for major Israeli channels.
+  // Used only when the configured Xtream provider returns 4xx/5xx.
+  44550: "https://kan11.media.kan.org.il/hls/live/2024514/2024514/master.m3u8",
+  267379: "https://kan11.media.kan.org.il/hls/live/2024514/2024514/master.m3u8",
+  17725: "https://reshet.g-mana.live/media/87f59c77-03f6-4bad-a648-897e095e7360/mainManifest.m3u8",
+  267381: "https://reshet.g-mana.live/media/87f59c77-03f6-4bad-a648-897e095e7360/mainManifest.m3u8",
+  17726: "https://ch14-channel14-content.akamaized.net/hls/live/2104807/CH14_CHANNEL14/master.m3u8",
+  267382: "https://ch14-channel14-content.akamaized.net/hls/live/2104807/CH14_CHANNEL14/master.m3u8",
+  74843: "https://bcovlive-a.akamaihd.net/d89ede8094c741b7924120b27764153c/eu-central-1/5377161796001/playlist.m3u8",
+  136439: "https://r.il.cdn-redge.media/livehls/oil/calcala/live/channel10/live.livx/playlist.m3u8",
+};
+
 function isRedirect(status: number) {
   return status >= 300 && status < 400;
 }
@@ -210,8 +223,9 @@ export async function GET(
     const headers: Record<string, string> = { ...UPSTREAM_HEADERS } as Record<string, string>;
     if (range) headers.Range = range;
 
-    const upstream = await fetchWithFallback(streamUrl, headers);
-    const contentType = upstream.headers.get("content-type") ?? "";
+    let upstream = await fetchWithFallback(streamUrl, headers);
+    let contentType = upstream.headers.get("content-type") ?? "";
+    const fallbackUrl = type === "live" ? PUBLIC_LIVE_FALLBACKS[numericId] : undefined;
 
     if (!upstream.ok && upstream.status !== 206) {
       let upstreamDetail = "";
@@ -219,10 +233,32 @@ export async function GET(
         upstreamDetail = await upstream.text();
       } catch { /* ignore */ }
       console.error(`Upstream ${upstream.status} for ${streamUrl}:`, upstreamDetail.slice(0, 500));
-      return NextResponse.json(
-        { error: `הזרם אינו זמין כעת (upstream ${upstream.status})`, detail: upstreamDetail.slice(0, 200) },
-        { status: upstream.status },
-      );
+
+      if (fallbackUrl) {
+        const fallback = await fetchWithFallback(fallbackUrl, headers);
+        if (fallback.ok || fallback.status === 206) {
+          upstream = fallback;
+          streamUrl = fallbackUrl;
+          contentType = upstream.headers.get("content-type") ?? "";
+        } else {
+          let fallbackDetail = "";
+          try { fallbackDetail = await fallback.text(); } catch { /* ignore */ }
+          console.error(`Fallback ${fallback.status} for ${fallbackUrl}:`, fallbackDetail.slice(0, 500));
+          return NextResponse.json(
+            {
+              error: `הזרם אינו זמין כעת (upstream ${upstream.status}, fallback ${fallback.status})`,
+              detail: upstreamDetail.slice(0, 200),
+              fallbackDetail: fallbackDetail.slice(0, 200),
+            },
+            { status: fallback.status },
+          );
+        }
+      } else {
+        return NextResponse.json(
+          { error: `הזרם אינו זמין כעת (upstream ${upstream.status})`, detail: upstreamDetail.slice(0, 200) },
+          { status: upstream.status },
+        );
+      }
     }
 
     // Force video/mp2t for MPEG-TS segments (.ts URLs or octet-stream that look like TS)
