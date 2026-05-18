@@ -378,7 +378,22 @@ class XtreamClient {
   buildStreamUrl(type: StreamType, id: number | string, ext?: string): string {
     const extension = ext ? ext : (type === "live" ? "ts" : "mp4");
     const prefix = type === "vod" ? "movie/" : type === "series" ? "series/" : "live/";
-    return `${buildBaseUrl(this.account)}/${prefix}${this.account.username}/${this.account.password}/${id}.${extension}`;
+    const directUrl = `${buildBaseUrl(this.account)}/${prefix}${this.account.username}/${this.account.password}/${id}.${extension}`;
+
+    // If a relay proxy is configured, route streams through it to bypass IP blocks.
+    // STREAM_RELAY_BASE should be like https://my-relay.up.railway.app
+    // The relay must implement /live/<user>/<pass>/<id>.ts?_host=...&_port=...&_proto=...
+    const relayBase = process.env.STREAM_RELAY_BASE;
+    if (relayBase && type === "live") {
+      const proto = getProtocol(this.account);
+      return `${relayBase}/${prefix}${this.account.username}/${this.account.password}/${id}.${extension}?_host=${encodeURIComponent(this.account.host)}&_port=${this.account.port}&_proto=${proto}`;
+    }
+    if (relayBase && (type === "vod" || type === "series")) {
+      const proto = getProtocol(this.account);
+      return `${relayBase}/${prefix}${this.account.username}/${this.account.password}/${id}.${extension}?_host=${encodeURIComponent(this.account.host)}&_port=${this.account.port}&_proto=${proto}`;
+    }
+
+    return directUrl;
   }
 }
 
