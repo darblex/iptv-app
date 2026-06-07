@@ -43,7 +43,7 @@ function WatchContent({ params: paramsPromise }: Props) {
       }
     };
     fetchUrl();
-  }, [type, streamId, ext, isValidType]);
+  }, [type, streamId, ext, isValidType, searchParams]);
 
   useEffect(() => {
     const loadMeta = async () => {

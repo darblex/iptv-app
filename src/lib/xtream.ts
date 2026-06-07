@@ -138,6 +138,13 @@ export interface SeriesInfoResponse {
 
 const HEALTH_CACHE_TTL_MS = 5 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 8000;
+const XTREAM_HEADERS: HeadersInit = {
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  Accept: "application/json,text/plain,*/*",
+  "Accept-Language": "he-IL,he;q=0.9,en-US;q=0.8,en;q=0.7",
+  "Cache-Control": "no-cache",
+};
 const accounts: AccountState[] = loadAccounts();
 let roundRobinIndex = 0;
 
@@ -245,6 +252,7 @@ async function checkHealth(account: AccountState): Promise<boolean> {
     const res = await fetch(url, {
       cache: "no-store",
       signal: controller.signal,
+      headers: XTREAM_HEADERS,
     });
 
     if (!res.ok) {
@@ -326,13 +334,20 @@ class XtreamClient {
       const res = await fetch(url, {
         cache: "no-store",
         signal: controller.signal,
+        headers: XTREAM_HEADERS,
       });
 
       if (!res.ok) {
-        throw new Error(`Xtream API error: ${res.status}`);
+        const body = await res.text().catch(() => "");
+        const challenge = /Just a moment|cf-mitigated|cloudflare/i.test(body);
+        throw new Error(`Xtream API error: ${res.status}${challenge ? " (Cloudflare challenge)" : ""}`);
       }
 
-      return (await res.json()) as T;
+      const body = await res.text();
+      if (/Just a moment|cf-mitigated|cloudflare/i.test(body.slice(0, 1200))) {
+        throw new Error("Xtream API blocked by Cloudflare challenge");
+      }
+      return JSON.parse(body) as T;
     } finally {
       clearTimeout(timeout);
     }
